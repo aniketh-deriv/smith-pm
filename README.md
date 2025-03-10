@@ -8,7 +8,7 @@ This project implements a Slack bot named Smith that uses Large Language Models 
 
 ## Features
 
-- 🤖 AI-powered Slack bot using LangChain
+- 🤖 AI-powered Slack bot using LangGraph and LangChain
 - 🧵 Thread-based conversation management
 - 📊 Project status tracking and reporting
 - 👥 Team activity monitoring
