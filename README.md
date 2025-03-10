@@ -88,6 +88,69 @@ Smith uses a LangGraph Supervisor architecture to coordinate between specialized
 
 This multi-agent approach allows Smith to handle a wide range of project management tasks with specialized expertise for each domain.
 
+### Agent Architecture Diagram
+
+```
+                                 ┌───────────────┐
+                                 │               │
+                                 │  Slack API    │
+                                 │               │
+                                 └───────┬───────┘
+                                         │
+                                         ▼
+┌───────────────┐               ┌───────────────┐
+│               │               │               │
+│  Environment  │───────────────▶  Slack Bot    │
+│  Variables    │               │  (slack.py)   │
+│               │               │               │
+└───────────────┘               └───────┬───────┘
+                                        │
+                                        ▼
+┌───────────────┐               ┌───────────────┐               ┌───────────────┐
+│               │               │               │               │               │
+│  System       │───────────────▶  Manager      │◀──────────────▶  Tools        │
+│  Prompt       │               │  (manager.py) │               │  (tools.py)   │
+│  (system.md)  │               │               │               │               │
+└───────────────┘               └───────┬───────┘               └───────────────┘
+                                        │
+                                        ▼
+                                ┌───────────────┐               ┌───────────────┐
+                                │               │               │               │
+                                │  LangGraph    │◀──────────────▶  LangMem      │
+                                │  Supervisor   │               │  Memory       │
+                                │  Agent        │               │  System       │
+                                └───────┬───────┘               └───────┬───────┘
+                                        │                               │
+                                        ▼                               │
+                    ┌───────────────────┼───────────────────┬───────────┘
+                    │                   │                   │                   
+                    ▼                   ▼                   ▼                   ▼
+        ┌───────────────┐     ┌───────────────┐     ┌───────────────┐     ┌───────────────┐
+        │               │     │               │     │               │     │               │
+        │  Main         │     │  Channel      │     │  User         │     │  Message      │
+        │  Agent        │     │  Explorer     │     │  Activity     │     │  Search       │
+        │               │     │  Agent        │     │  Agent        │     │  Agent        │
+        └───────┬───────┘     └───────┬───────┘     └───────┬───────┘     └───────┬───────┘
+                │                     │                     │                     │
+                │                     │                     │                     │
+                └─────────────────────┼─────────────────────┼─────────────────────┘
+                                      │                     │
+                                      ▼                     ▼
+                            ┌───────────────────────────────────────┐
+                            │                                       │
+                            │              Memory Store             │
+                            │                                       │
+                            └───────────────────────────────────────┘
+```
+
+This diagram now properly shows:
+
+1. The connections from all four specialized agents (Main, Channel Explorer, User Activity, and Message Search) to the Memory Store
+2. The connection from LangMem to the specialized agents
+3. The hierarchical relationship between the Supervisor Agent and the specialized agents
+
+The arrows now clearly indicate the flow of information between components, showing how all agents can access the Memory Store and how LangMem integrates with the entire system.
+
 ### Memory System
 
 Smith uses LangMem for persistent memory capabilities:
@@ -164,5 +227,3 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
-# smith-pm
-# smith-pm
