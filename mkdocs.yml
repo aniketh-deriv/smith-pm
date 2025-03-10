@@ -1,0 +1,24 @@
+site_name: Agentic Office - Smith The PM Agent
+theme:
+  name: material
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - navigation.expand
+    - search.highlight
+
+nav:
+  - Home: index.md
+  - System: system.md
+  - Tools: tools.md
+  - Slack: manager.md
+  - Slack: slack.md
+
+markdown_extensions:
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - pymdownx.superfences
+  - admonition
+  - pymdownx.details
