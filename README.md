@@ -153,14 +153,16 @@ The arrows now clearly indicate the flow of information between components, show
 
 ### Memory System
 
-Smith uses LangMem for persistent memory capabilities:
+Smith uses LangMem for sophisticated persistent memory capabilities:
 
 - **Thread-Specific Memory**: Maintains context within conversation threads
 - **User-Global Memory**: Remembers user preferences across different conversations
 - **Namespaced Storage**: Organizes memory by user and context type
 - **Memory Tools**: Provides tools for storing and retrieving information
+- **Self-Improvement through Reflection**: Periodically analyzes past interactions to improve agent instructions and performance
+- **Procedural Memory**: Stores and executes multi-step procedures for complex tasks
 
-This memory architecture enables Smith to maintain context over time, remember user preferences, and provide personalized responses based on past interactions.
+This memory architecture enables Smith to maintain context over time, remember user preferences, provide personalized responses, continuously improve its performance, and execute complex procedures without requiring constant guidance.
 
 ## Core Tools
 
