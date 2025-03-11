@@ -32,7 +32,8 @@ from tools import (
     NEEDS_APPROVAL,
     AVAILABLE_TOOLS,
     TOOL_MAP,
-    set_slack_client
+    set_slack_client,
+    reflect_and_improve
 )
 
 import time
@@ -86,39 +87,57 @@ class LangGraphManager:
         # Initialize memory tools with proper namespace and store
         user_id = self.current_thread.get('user_id', 'default_user') if self.current_thread else 'default_user'
         
-        # CHANGE 1: Use only user_id for namespace, not thread-specific
-        # This creates shared memory across all threads for the same user
-        namespace = f"user:{user_id}"
+        # Create a shared team namespace for all agents
+        team_namespace = f"user:{user_id}"
         
-        # Create memory tools with explicit store parameter
-        manage_memory_tool = create_manage_memory_tool(
-            namespace=(namespace, "preferences"),
+        # Create agent-specific namespaces
+        main_agent_namespace = (team_namespace, "main_agent")
+        channel_explorer_namespace = (team_namespace, "channel_explorer")
+        user_activity_namespace = (team_namespace, "user_activity")
+        message_search_namespace = (team_namespace, "message_search")
+        
+        # Create shared memory tools for the team namespace
+        shared_manage_memory_tool = create_manage_memory_tool(
+            namespace=team_namespace,
             store=self.store
         )
         
-        search_memory_tool = create_search_memory_tool(
-            namespace=(namespace, "preferences"),
+        shared_search_memory_tool = create_search_memory_tool(
+            namespace=team_namespace,
             store=self.store
         )
         
-        # CHANGE 2: Add a global conversation memory namespace
-        global_manage_memory_tool = create_manage_memory_tool(
-            namespace=(namespace, "global_conversations"),
+        # Create agent-specific memory tools
+        main_agent_memory_tool = create_manage_memory_tool(
+            namespace=main_agent_namespace,
             store=self.store
         )
         
-        global_search_memory_tool = create_search_memory_tool(
-            namespace=(namespace, "global_conversations"),
+        channel_explorer_memory_tool = create_manage_memory_tool(
+            namespace=channel_explorer_namespace,
             store=self.store
         )
         
-        # Create specialized agents with memory tools
-        agents = create_agents(llm, memory_tools=[
-            manage_memory_tool, 
-            search_memory_tool,
-            global_manage_memory_tool,
-            global_search_memory_tool
-        ])
+        user_activity_memory_tool = create_manage_memory_tool(
+            namespace=user_activity_namespace,
+            store=self.store
+        )
+        
+        message_search_memory_tool = create_manage_memory_tool(
+            namespace=message_search_namespace,
+            store=self.store
+        )
+        
+        # Create specialized agents with their specific memory tools
+        agents = create_agents(
+            llm, 
+            memory_tools={
+                "main_agent": [main_agent_memory_tool, shared_search_memory_tool, shared_manage_memory_tool],
+                "channel_explorer": [channel_explorer_memory_tool, shared_search_memory_tool, shared_manage_memory_tool],
+                "user_activity": [user_activity_memory_tool, shared_search_memory_tool, shared_manage_memory_tool],
+                "message_search": [message_search_memory_tool, shared_search_memory_tool, shared_manage_memory_tool]
+            }
+        )
         
         try:
             # Create supervisor workflow WITHOUT passing store directly
@@ -354,11 +373,63 @@ class LangGraphManager:
             except Exception as e:
                 logger.error(f"Error storing conversation: {str(e)}")
             
+            # Check if we should trigger reflection (e.g., every 10 messages)
+            self._maybe_trigger_reflection()
+            
             return response, None
 
         except Exception as e:
             logger.error("Error processing message: %s", str(e), exc_info=True)
             return f"I encountered an error: {str(e)}", None
+
+    def _maybe_trigger_reflection(self):
+        """Periodically trigger agent reflection to improve performance."""
+        # Get the message count from memory
+        user_id = self.current_thread.get('user_id', 'default_user') if self.current_thread else 'default_user'
+        namespace = (f"user:{user_id}", "reflection_metadata")
+        
+        try:
+            # Get or initialize message counter
+            try:
+                counter_data = self.store.get(namespace, "message_counter")
+                if counter_data and len(counter_data) > 0:
+                    message_counter = counter_data[0].value.get("count", 0)
+                else:
+                    message_counter = 0
+            except Exception:
+                message_counter = 0
+            
+            # Increment counter
+            message_counter += 1
+            
+            # Store updated counter
+            self.store.put(namespace, "message_counter", {"count": message_counter})
+            
+            # Check if we should reflect (every 10 messages)
+            if message_counter % 10 == 0:
+                logger.info(f"Triggering reflection after {message_counter} messages")
+                
+                # Create context for reflection
+                reflection_context = {
+                    "agent_name": "main_agent",  # Start with the main agent
+                    "user_id": user_id,
+                    "store": self.store
+                }
+                
+                # Use the reflect_and_improve tool
+                improvement_summary = reflect_and_improve("", reflection_context)
+                
+                logger.info(f"Agent reflection complete: {improvement_summary}")
+                
+                # Also trigger reflection for other agents occasionally
+                if message_counter % 30 == 0:
+                    for agent_name in ["channel_explorer", "user_activity", "message_search"]:
+                        reflection_context["agent_name"] = agent_name
+                        improvement_summary = reflect_and_improve("", reflection_context)
+                        logger.info(f"{agent_name} reflection complete: {improvement_summary}")
+        
+        except Exception as e:
+            logger.error(f"Error during reflection: {str(e)}")
 
     def continue_with_approval(self, approved: bool) -> Tuple[str, Optional[Dict[str, Any]]]:
         """Continue execution after user approval."""

@@ -42,6 +42,7 @@ def requires_approval(func):
     NEEDS_APPROVAL[func.__name__] = False
     return func
 
+# At the beginning of the file, define it as a list
 AVAILABLE_TOOLS = []
 
 def enabled_tool(func):
@@ -829,7 +830,7 @@ def list_channel_members(channel_id_or_name: str) -> str:
         return f"Error listing channel members: {str(e)}"
 
 # Available tools
-AVAILABLE_TOOLS: Dict[str, Dict[str, Any]] = {
+TOOL_DEFINITIONS: Dict[str, Dict[str, Any]] = {
     "list_channels": {
         "name": "list_channels",
         "description": "List all channels in the Slack workspace",
@@ -878,3 +879,121 @@ def get_llm():
         openai_api_key=api_key,
         openai_api_base=api_base
     )
+
+@enabled_tool
+@tool
+def reflect_and_improve(feedback: str = "", opts: Annotated[dict, InjectedToolArg] = None) -> str:
+    """
+    Reflect on recent interactions and update agent instructions to improve performance.
+    
+    Args:
+        feedback: Optional explicit feedback from the user
+    
+    Returns:
+        A summary of the improvements made
+    """
+    try:
+        # Get the current agent name from the context
+        agent_name = opts.get("agent_name", "unknown_agent")
+        user_id = opts.get("user_id", "default_user")
+        
+        # Create namespace for storing agent instructions
+        namespace = (f"user:{user_id}", "agent_instructions")
+        
+        # Get the store from opts
+        store = opts.get("store")
+        if not store:
+            return "Error: Memory store not available for reflection"
+        
+        # Try to get current instructions
+        try:
+            current_instructions = store.get(namespace, key=agent_name)
+            if current_instructions:
+                current_instructions = current_instructions[0].value.get("instructions", "")
+            else:
+                # If no instructions exist yet, use default ones based on agent type
+                if agent_name == "main_agent":
+                    current_instructions = "You are the main supervisor agent that coordinates all interactions."
+                elif agent_name == "channel_explorer":
+                    current_instructions = "You are a specialized agent for exploring Slack channels."
+                elif agent_name == "user_activity":
+                    current_instructions = "You are a specialized agent for analyzing user activity in Slack."
+                elif agent_name == "message_search":
+                    current_instructions = "You are a specialized agent for searching and analyzing Slack messages."
+                else:
+                    current_instructions = "You are a helpful AI assistant for Slack."
+        except Exception as e:
+            logger.error(f"Error retrieving current instructions: {str(e)}")
+            current_instructions = "No previous instructions found."
+        
+        # Get recent conversations from memory to analyze
+        try:
+            # Get recent conversations from the agent's namespace
+            agent_namespace = (f"user:{user_id}", agent_name)
+            conversations = store.list_keys(agent_namespace)
+            
+            # Filter for conversation entries
+            conversation_keys = [k for k in conversations if k.startswith("conv_")]
+            recent_conversations = []
+            
+            # Get the content of recent conversations (up to 5)
+            for key in conversation_keys[-5:]:
+                conv = store.get(agent_namespace, key)
+                if conv and len(conv) > 0:
+                    recent_conversations.append(conv[0].value.get("memory", ""))
+            
+            conversation_context = "\n\n".join(recent_conversations)
+        except Exception as e:
+            logger.error(f"Error retrieving conversations: {str(e)}")
+            conversation_context = "No recent conversations found."
+        
+        # Use the LLM to generate improved instructions
+        llm = get_llm()
+        
+        reflection_prompt = f"""
+        You are an AI improvement specialist. Your task is to analyze recent interactions and update an agent's instructions to improve its performance.
+        
+        CURRENT INSTRUCTIONS:
+        {current_instructions}
+        
+        RECENT INTERACTIONS:
+        {conversation_context}
+        
+        USER FEEDBACK (if any):
+        {feedback}
+        
+        Based on the above, please:
+        1. Identify patterns in how the agent is performing
+        2. Note any areas where the agent could improve
+        3. Create updated instructions that address these improvements
+        4. Preserve the core functionality and purpose of the agent
+        
+        Return ONLY the new instructions without any explanation or additional text.
+        """
+        
+        # Get the improved instructions
+        response = llm.invoke(reflection_prompt)
+        improved_instructions = response.content.strip()
+        
+        # Store the improved instructions
+        store.put(namespace, key=agent_name, value={"instructions": improved_instructions})
+        
+        # Return a summary of the changes
+        summary_prompt = f"""
+        Summarize how the agent instructions have been improved:
+        
+        BEFORE:
+        {current_instructions}
+        
+        AFTER:
+        {improved_instructions}
+        
+        Provide a brief, bullet-point summary of the key improvements.
+        """
+        
+        summary_response = llm.invoke(summary_prompt)
+        return summary_response.content.strip()
+        
+    except Exception as e:
+        logger.error(f"Error in reflect_and_improve: {str(e)}")
+        return f"Error improving agent: {str(e)}"

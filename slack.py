@@ -5,6 +5,7 @@ from slack_bolt import App
 from slack_bolt.adapter.socket_mode import SocketModeHandler
 from typing import Any
 import json
+import time
 
 # Configure logging
 logging.basicConfig(
@@ -17,7 +18,7 @@ logger = logging.getLogger(__name__)
 load_dotenv()
 
 from manager import LangGraphManager, get_or_create_manager, get_manager
-from tools import set_slack_client
+from tools import set_slack_client, reflect_and_improve
 
 # Log environment variables (without revealing full tokens)
 bot_token = os.environ.get("SLACK_BOT_TOKEN", "")
@@ -217,6 +218,58 @@ def handle_message_events(body):
             channel=body["event"]["channel"],
             thread_ts=body["event"]["thread_ts"] if "thread_ts" in body["event"] else body["event"]["ts"],
             text=f"Error processing message: {str(e)}"
+        )
+
+@app.command("/improve")
+def handle_improve_command(ack, body, client):
+    """Handle the /improve command to provide feedback for agent improvement."""
+    ack()
+    
+    try:
+        # Get the user ID and feedback text
+        user_id = body["user_id"]
+        feedback = body["text"]
+        
+        # Get the channel ID
+        channel_id = body["channel_id"]
+        
+        # Create a unique conversation ID for this feedback
+        conversation_id = f"{channel_id}::{time.time()}"
+        
+        # Get or create a manager for this conversation
+        manager = get_or_create_manager(conversation_id, client)
+        
+        # Set user ID in the thread context
+        if not manager.current_thread:
+            manager.current_thread = {
+                "user_id": user_id,
+                "configurable": {
+                    "thread_id": conversation_id,
+                    "user_id": user_id
+                }
+            }
+        
+        # Create context for reflection
+        reflection_context = {
+            "agent_name": "main_agent",  # Start with the main agent
+            "user_id": user_id,
+            "store": manager.store
+        }
+        
+        # Use the reflect_and_improve tool with explicit feedback
+        improvement_summary = reflect_and_improve(feedback, reflection_context)
+        
+        # Send a response to the user
+        client.chat_postMessage(
+            channel=channel_id,
+            text=f"Thank you for your feedback! I've used it to improve:\n\n{improvement_summary}"
+        )
+        
+    except Exception as e:
+        logger.error(f"Error handling improve command: {str(e)}")
+        client.chat_postMessage(
+            channel=body["channel_id"],
+            text=f"Error processing improvement feedback: {str(e)}"
         )
 
 # Start the app
