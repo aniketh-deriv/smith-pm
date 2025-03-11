@@ -234,3 +234,110 @@ API_BASE_URL=your-api-base-url   # Optional custom API endpoint
 - Check response times
 - Verify state handling
 - Test concurrent conversations
+
+## Memory Integration
+
+The `LangGraphManager` integrates with LangMem to provide sophisticated memory capabilities:
+
+```python
+# Initialize the store for LangGraph checkpointing
+self.store = InMemoryStore()
+```
+
+### Memory Namespaces
+
+The manager creates a hierarchical namespace structure:
+
+```python
+# Create a shared team namespace for all agents
+team_namespace = f"user:{user_id}"
+
+# Create agent-specific namespaces
+main_agent_namespace = (team_namespace, "main_agent")
+channel_explorer_namespace = (team_namespace, "channel_explorer")
+user_activity_namespace = (team_namespace, "user_activity")
+message_search_namespace = (team_namespace, "message_search")
+```
+
+This enables:
+- User-specific memory isolation
+- Agent-specific private memories
+- Shared memories accessible to all agents
+
+### Memory Tools
+
+The manager creates specialized memory tools for each agent:
+
+```python
+# Create shared memory tools for the team namespace
+shared_manage_memory_tool = create_manage_memory_tool(
+    namespace=team_namespace,
+    store=self.store
+)
+
+shared_search_memory_tool = create_search_memory_tool(
+    namespace=team_namespace,
+    store=self.store
+)
+
+# Create agent-specific memory tools
+main_agent_memory_tool = create_manage_memory_tool(
+    namespace=main_agent_namespace,
+    store=self.store
+)
+```
+
+These tools are distributed to agents based on their roles, giving each agent:
+1. Its own private memory space
+2. Access to the shared memory space
+3. The ability to store and retrieve information across different namespaces
+
+## Self-Improvement Mechanism
+
+The manager implements a self-improvement mechanism that allows agents to evolve over time:
+
+```python
+def _maybe_trigger_reflection(self):
+    """Periodically trigger agent reflection to improve performance."""
+    # Check if we should reflect (every 10 messages)
+    if message_counter % 10 == 0:
+        # Create context for reflection
+        reflection_context = {
+            "agent_name": "main_agent",
+            "user_id": user_id,
+            "store": self.store
+        }
+        
+        # Use the reflect_and_improve tool
+        improvement_summary = reflect_and_improve("", reflection_context)
+```
+
+### Periodic Reflection
+
+The system automatically triggers reflection:
+- After every 10 messages for the main agent
+- Every 30 messages for all specialized agents
+
+### User-Triggered Improvement
+
+Users can provide explicit feedback through the `/improve` Slack command:
+
+```python
+@app.command("/improve")
+def handle_improve_command(ack, body, client):
+    # Get the user ID and feedback text
+    user_id = body["user_id"]
+    feedback = body["text"]
+    
+    # Use the reflect_and_improve tool with explicit feedback
+    improvement_summary = reflect_and_improve(feedback, reflection_context)
+```
+
+### Instruction Management
+
+Agent instructions are stored in the memory system:
+- Namespace: `(f"user:{user_id}", "agent_instructions")`
+- Key: Agent name (e.g., "main_agent")
+- Value: JSON object with instructions
+
+This allows instructions to evolve over time based on usage patterns and feedback.

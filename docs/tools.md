@@ -136,6 +136,8 @@ def get_user_active_channels(user_identifier: str, opts: Annotated[dict, Injecte
 
 ### 3. Memory Management
 
+The memory management tools leverage LangMem to provide sophisticated memory capabilities with namespaced organization.
+
 #### manage_memory
 
 Stores information in the bot's memory for later retrieval.
@@ -154,6 +156,9 @@ def manage_memory(content: str, key: str = None, opts: Annotated[dict, InjectedT
 - Optional key for organization
 - Namespace support for multi-user environments
 - Automatic timestamping
+- Agent-specific or shared memory spaces
+
+**Usage:**
 
 #### search_memory
 
@@ -260,6 +265,38 @@ def transfer_back_to_supervisor(tool_input: str = "") -> str:
     Transfer control back to the main supervisor agent.
     """
 ```
+
+### 6. Self-Improvement
+
+#### reflect_and_improve
+
+Analyzes past interactions and updates agent instructions to improve performance.
+
+```python
+@enabled_tool
+@tool
+def reflect_and_improve(feedback: str = "", opts: Annotated[dict, InjectedToolArg] = None) -> str:
+    """
+    Reflect on recent interactions and update agent instructions to improve performance.
+    """
+```
+
+**Features:**
+- Analyzes recent conversations
+- Incorporates explicit user feedback
+- Updates agent instructions
+- Preserves core agent functionality
+- Provides improvement summary
+
+**Process:**
+1. Retrieves current agent instructions
+2. Analyzes recent conversations
+3. Identifies improvement opportunities
+4. Generates updated instructions
+5. Stores the improved instructions
+6. Returns a summary of improvements
+
+This tool enables continuous improvement of agent performance based on actual usage patterns and explicit user feedback.
 
 ## Best Practices for Tool Usage
 

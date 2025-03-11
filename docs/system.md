@@ -209,30 +209,28 @@ The system follows a modular architecture with several key components working to
                                 │  LangGraph    │◀──────────────▶  LangMem      │
                                 │  Supervisor   │               │  Memory       │
                                 │               │               │  System       │
-                                └───────┬───────┘               └───────────────┘
-                                        │
-                                        ▼
-                    ┌───────────────────┼───────────────────┐
-                    │                   │                   │
-                    ▼                   ▼                   ▼
-        ┌───────────────┐     ┌───────────────┐     ┌───────────────┐
-        │               │     │               │     │               │
-        │  Main         │     │  Channel      │     │  User         │
-        │  Agent        │     │  Explorer     │     │  Activity     │
-        │               │     │  Agent        │     │  Agent        │
-        └───────────────┘     └───────────────┘     └───────────────┘
-                    │                   │                   │
-                    │                   │                   │
-                    ▼                   ▼                   ▼
-                    ┌───────────────────┼───────────────────┐
-                    │                   │                   │
-                    ▼                   ▼                   ▼
-                            ┌───────────────┐
-                            │               │
-                            │  Memory       │
-                            │  Store        │
-                            │               │
-                            └───────────────┘
+                                └───────┬───────┘               └───────┬───────┘
+                                        │                               │
+                                        ▼                               │
+                    ┌───────────────────┼───────────────────┬───────────▼──────────┐
+                    │                   │                   │                      │
+                    ▼                   ▼                   ▼                      ▼
+        ┌───────────────┐     ┌───────────────┐     ┌───────────────┐     ┌───────────────┐
+        │               │     │               │     │               │     │               │
+        │  Main         │     │  Channel      │     │  User         │     │  Message      │
+        │  Agent        │     │  Explorer     │     │  Activity     │     │  Search       │
+        │               │     │  Agent        │     │  Agent        │     │  Agent        │
+        └───────┬───────┘     └───────┬───────┘     └───────┬───────┘     └───────┬───────┘
+                │                     │                     │                     │
+                │                     │                     │                     │
+                └─────────────────────┼─────────────────────┼─────────────────────┘
+                                      │                     │
+                                      ▼                     ▼
+                            ┌───────────────────────────────────────┐
+                            │                                       │
+                            │              Memory Store             │
+                            │                                       │
+                            └───────────────────────────────────────┘
 ```
 
 ## Component Descriptions
@@ -251,10 +249,22 @@ The system follows a modular architecture with several key components working to
 - Detects and stores user preferences
 
 ### 3. Tools (tools.py)
-- Provides specialized functions for the AI to use
-- Includes channel management tools
-- Implements message analysis capabilities
-- Offers memory management utilities
+- Provides specific functionalities for the AI
+- Implements Slack channel operations
+- Handles message history retrieval
+- Manages channel access and caching
+- Offers memory management and self-improvement capabilities
+
+Available tools:
+- `get_accessible_channels`: Lists available Slack channels
+- `get_recent_channel_messages`: Retrieves channel history
+- `get_user_active_channels`: Finds channels where a user is active
+- `manage_memory`: Stores information in memory with namespacing
+- `search_memory`: Retrieves information from memory using semantic search
+- `store_procedure`: Stores step-by-step procedures for future reference
+- `recall_procedure`: Retrieves stored procedures
+- `execute_procedure`: Runs stored procedures step by step
+- `reflect_and_improve`: Analyzes past interactions to improve agent performance
 
 ### 4. LangGraph Supervisor
 - Coordinates between specialized agents
@@ -312,18 +322,82 @@ The system follows a modular architecture with several key components working to
 
 The system uses a sophisticated memory architecture powered by LangMem to maintain context:
 
-1. **Thread-Specific Memory**
-   - Each conversation thread has its own memory space
-   - Stores context relevant to the current conversation
+### Memory Namespaces
 
-2. **User-Global Memory**
-   - Shared across all threads for the same user
-   - Stores user preferences and important information
+The memory system is organized into hierarchical namespaces:
 
-3. **Memory Operations**
-   - `manage_memory` - Stores information in the memory system
-   - `search_memory` - Retrieves information based on queries
-   - Memory is organized in namespaces for efficient retrieval
+```
+user:{user_id}/                 # User-level namespace
+├── main_agent/                 # Agent-specific namespace
+├── channel_explorer/           # Agent-specific namespace
+├── user_activity/              # Agent-specific namespace
+├── message_search/             # Agent-specific namespace
+├── preferences/                # User preferences
+├── conversations/              # Thread-specific conversations
+├── global_conversations/       # User's conversations across all threads
+└── agent_instructions/         # Dynamic agent instructions
+    ├── main_agent              # Instructions for main agent
+    ├── channel_explorer        # Instructions for channel explorer
+    ├── user_activity           # Instructions for user activity
+    └── message_search          # Instructions for message search
+```
+
+This namespace structure enables:
+1. **Agent-Specific Memory**: Each agent has its own private memory space
+2. **Shared Memory**: All agents can access the user-level namespace
+3. **Cross-Thread Memory**: Global conversations are accessible across all threads
+4. **Dynamic Instructions**: Agent instructions can evolve over time through reflection
+
+### Memory Operations
+
+The system provides several memory operations:
+- **Store**: Save information to specific namespaces
+- **Retrieve**: Get information from specific namespaces
+- **Search**: Find relevant information across namespaces
+- **Update**: Modify existing memories
+- **Delete**: Remove outdated or incorrect memories
+
+### Memory Tools Implementation
+
+The system creates specialized memory tools for each agent:
+
+```python
+# Create shared memory tools for the team namespace
+shared_manage_memory_tool = create_manage_memory_tool(
+    namespace=team_namespace,
+    store=self.store
+)
+
+shared_search_memory_tool = create_search_memory_tool(
+    namespace=team_namespace,
+    store=self.store
+)
+
+# Create agent-specific memory tools
+main_agent_memory_tool = create_manage_memory_tool(
+    namespace=main_agent_namespace,
+    store=self.store
+)
+```
+
+These tools are distributed to agents based on their roles:
+
+```python
+agents = create_agents(
+    llm, 
+    memory_tools={
+        "main_agent": [main_agent_memory_tool, shared_search_memory_tool, shared_manage_memory_tool],
+        "channel_explorer": [channel_explorer_memory_tool, shared_search_memory_tool, shared_manage_memory_tool],
+        "user_activity": [user_activity_memory_tool, shared_search_memory_tool, shared_manage_memory_tool],
+        "message_search": [message_search_memory_tool, shared_search_memory_tool, shared_manage_memory_tool]
+    }
+)
+```
+
+This configuration gives each agent:
+1. Its own private memory space (via its specific manage_memory_tool)
+2. Access to the shared memory space (via shared_search_memory_tool and shared_manage_memory_tool)
+3. The ability to store and retrieve information across different namespaces
 
 ## Agent Coordination
 
@@ -399,10 +473,18 @@ Key features:
 - Implements Slack channel operations
 - Handles message history retrieval
 - Manages channel access and caching
+- Offers memory management and self-improvement capabilities
 
 Available tools:
 - `get_accessible_channels`: Lists available Slack channels
 - `get_recent_channel_messages`: Retrieves channel history
+- `get_user_active_channels`: Finds channels where a user is active
+- `manage_memory`: Stores information in memory with namespacing
+- `search_memory`: Retrieves information from memory using semantic search
+- `store_procedure`: Stores step-by-step procedures for future reference
+- `recall_procedure`: Retrieves stored procedures
+- `execute_procedure`: Runs stored procedures step by step
+- `reflect_and_improve`: Analyzes past interactions to improve agent performance
 
 ## Message Flow
 

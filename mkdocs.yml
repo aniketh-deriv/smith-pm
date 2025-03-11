@@ -11,7 +11,8 @@ nav:
   - Home: index.md
   - System: system.md
   - Tools: tools.md
-  - Slack: manager.md
+  - Memory: memory.md
+  - Manager: manager.md
   - Slack: slack.md
 
 markdown_extensions:
