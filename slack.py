@@ -49,6 +49,9 @@ else:
 set_slack_client(app.client)
 logger.info("Set global Slack client")
 
+# At module level
+processed_messages = {}
+
 @app.event("app_mention")
 def handle_app_mention_events(body):
     """Handle app mention events."""
@@ -93,11 +96,13 @@ def handle_app_mention_events(body):
         
         # Send the response to Slack
         if response:
-            app.client.chat_postMessage(
+            logger.info(f"Sending to Slack - Length: {len(response)} chars")
+            result = app.client.chat_postMessage(
                 channel=channel_id,
                 thread_ts=thread_ts,
                 text=response
             )
+            logger.info(f"Slack API response: {result.get('ok')}")
         
     except Exception as e:
         logger.error(f"Error handling app mention event: {str(e)}", exc_info=True)
@@ -109,75 +114,49 @@ def handle_app_mention_events(body):
 
 @app.event("message")
 def handle_message_events(body):
-    """Handle message events."""
-    logger.info(f"Message event: {body}")
-    
+    """Handle message events with deduplication."""
     try:
         event = body.get("event", {})
         
-        # Skip messages from bots to avoid infinite loops
-        if event.get("bot_id") or event.get("subtype") == "bot_message":
+        # Create a unique message identifier
+        message_id = event.get("client_msg_id") or event.get("ts")
+        
+        # Skip if we've already processed this message
+        if message_id in processed_messages:
+            logger.info(f"Skipping already processed message {message_id}")
             return
             
-        # Skip app_mention events - they're handled by the app_mention handler
-        if "app_mention" in event.get("type", ""):
-            logger.info("Skipping message event that is also an app_mention")
+        # Mark this message as processed
+        processed_messages[message_id] = time.time()
+        
+        # Cleanup old processed messages (keep last 100)
+        if len(processed_messages) > 100:
+            # Remove oldest entries
+            sorted_ids = sorted(processed_messages.items(), key=lambda x: x[1])
+            for old_id, _ in sorted_ids[:len(processed_messages) - 100]:
+                processed_messages.pop(old_id, None)
+        
+        # Get the bot ID of the message sender
+        sender_bot_id = event.get("bot_id")
+        
+        # List of allowed bot IDs that Smith should respond to
+        allowed_bot_ids = ["B08JP065D44"]  # Pentester bot ID from your logs
+        
+        # Skip messages from bots EXCEPT those in the allowed list
+        if sender_bot_id and sender_bot_id not in allowed_bot_ids:
             return
         
-        # Skip messages that contain a mention of the bot - these will be handled by app_mention
-        bot_user_id = app.client.auth_test()["user_id"]
-        if f"<@{bot_user_id}>" in event.get("text", ""):
-            logger.info(f"Skipping message that mentions the bot: {event.get('text', '')}")
+        # Also skip if it's a system bot message
+        if event.get("subtype") == "bot_message" and not sender_bot_id:
             return
-        
+            
+        # Process the message as you normally would
         channel_id = event.get("channel")
         thread_ts = event.get("thread_ts", event.get("ts"))
         text = event.get("text", "")
-        user_id = event.get("user")
         
-        # Check if this is a reply in a thread
-        if "thread_ts" in event:
-            # Create a unique conversation ID
-            conversation_id = f"{channel_id}::{event['thread_ts']}"
-            
-            # Get the manager for this conversation
-            manager = get_manager(conversation_id)
-            
-            # Only respond if we have a manager for this thread (meaning the bot is part of it)
-            if manager:
-                # Set user ID in the thread context if not already set
-                if not manager.current_thread:
-                    manager.current_thread = {
-                        "user_id": user_id,
-                        "configurable": {
-                            "thread_id": conversation_id,
-                            "user_id": user_id
-                        }
-                    }
-                
-                # Process the message normally
-                response, metadata = manager.process_message(text)
-                
-                # Automatically approve any tool calls
-                if metadata and "pending_tool_calls" in metadata:
-                    response, _ = manager.continue_with_approval(True)
-                
-                # Send the response to Slack
-                if response:
-                    app.client.chat_postMessage(
-                        channel=channel_id,
-                        thread_ts=thread_ts,
-                        text=response
-                    )
-            return
-        
-        # Check if this is a DM
-        is_dm = event.get("channel_type") == "im"
-        
-        # Only respond to DMs (not to regular messages in channels)
-        if not is_dm:
-            logger.info("Skipping non-DM message")
-            return
+        # Create a user_id that indicates this is from a bot
+        user_id = f"bot_{sender_bot_id}" if sender_bot_id else event.get("user")
         
         # Create a unique conversation ID
         conversation_id = f"{channel_id}::{thread_ts}"
@@ -185,35 +164,32 @@ def handle_message_events(body):
         # Get or create a manager for this conversation
         manager = get_or_create_manager(conversation_id, app.client)
         
-        # Set user ID in the thread context
-        if not manager.current_thread:
-            manager.current_thread = {
-                "user_id": user_id,
-                "configurable": {
-                    "thread_id": conversation_id,
-                    "user_id": user_id
-                }
-            }
+        # Set thread context
+        manager.current_thread = {
+            "user_id": user_id,
+            "configurable": {
+                "thread_id": conversation_id,
+                "checkpoint_ns": "bot_communication",
+                "checkpoint_id": conversation_id
+            },
+            "is_bot_communication": bool(sender_bot_id),
+            "source_bot_id": sender_bot_id
+        }
         
         # Process the message
         response, metadata = manager.process_message(text)
         
-        # Automatically approve any tool calls
-        if metadata and "pending_tool_calls" in metadata:
-            # Auto-approve all tool calls
-            response, _ = manager.continue_with_approval(True)
-        
         # Send the response to Slack
         if response:
-            logger.info(f"Sending response to Slack: {response[:100]}...")
+            logger.info(f"Sending response to {sender_bot_id or 'user'}: {response[:100]}...")
             app.client.chat_postMessage(
                 channel=channel_id,
                 thread_ts=thread_ts,
                 text=response
             )
-        
+    
     except Exception as e:
-        logger.error(f"Error handling message event: {str(e)}", exc_info=True)
+        logger.error(f"Error handling message event: {str(e)}")
         app.client.chat_postMessage(
             channel=body["event"]["channel"],
             thread_ts=body["event"]["thread_ts"] if "thread_ts" in body["event"] else body["event"]["ts"],

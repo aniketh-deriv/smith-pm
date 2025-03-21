@@ -238,16 +238,27 @@ class LangGraphManager:
             
             # Extract the response
             response = ""
+            main_agent_response = ""
             if isinstance(result, dict) and "messages" in result:
-                # Find the last assistant message in the messages array
+                # Look for the main_agent's detailed response
+                for msg in result["messages"]:
+                    if hasattr(msg, "name") and msg.name == "main_agent" and hasattr(msg, "content") and msg.content and not msg.content.startswith("Transferring"):
+                        main_agent_response = msg.content
+                        
+                # Find the last assistant message from supervisor
                 for msg in reversed(result["messages"]):
-                    # Check if this is an AIMessage object with name 'supervisor'
                     if hasattr(msg, "name") and msg.name == "supervisor" and hasattr(msg, "content"):
                         response = msg.content
                         # Add this message to our history in the correct format
                         self.messages.append(AIMessage(content=response))
                         break
                 
+                # If we have both responses, combine them
+                if main_agent_response and response:
+                    response = f"{main_agent_response}\n\n{response}"
+                elif main_agent_response:
+                    response = main_agent_response
+                    
                 # If no response found, try to get the last message content
                 if not response and len(result["messages"]) > 0:
                     last_msg = result["messages"][-1]
