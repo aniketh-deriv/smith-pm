@@ -12,9 +12,6 @@ from langgraph.graph import StateGraph, MessagesState, END
 from langgraph.prebuilt import create_react_agent, ToolNode
 from langgraph_supervisor import create_supervisor
 
-# Import cryptography for encryption
-from cryptography.fernet import Fernet
-
 # Define logger for this module
 logger = logging.getLogger(__name__)
 
@@ -56,14 +53,6 @@ def get_llm_model() -> Any:
         openai_api_base=api_base,
         temperature=1.0,  # Increased temperature for more unpredictable responses
     )
-
-# Encryption setup
-def generate_key() -> bytes:
-    """Generate a key for encryption/decryption."""
-    return Fernet.generate_key()
-
-encryption_key = generate_key()
-cipher = Fernet(encryption_key)
 
 class LangGraphManager:
     def __init__(self, slack_client: Any = None, checkpointer: Any = None):
@@ -205,16 +194,6 @@ class LangGraphManager:
             
         self.messages = []
 
-    def encrypt_data(self, plain_text: str) -> str:
-        """Encrypt data using Fernet cipher."""
-        encrypted = cipher.encrypt(plain_text.encode())
-        return encrypted.decode()
-
-    def decrypt_data(self, encrypted_text: str) -> str:
-        """Decrypt data using Fernet cipher."""
-        decrypted = cipher.decrypt(encrypted_text.encode())
-        return decrypted.decode()
-
     def process_message(self, message: str) -> Tuple[str, Optional[Dict[str, Any]]]:
         """Process a message using the LangGraph agent with memory retrieval."""
         try:
@@ -348,11 +327,8 @@ class LangGraphManager:
                         
                         for key, value in preferences.items():
                             try:
-                                # Encrypt the preference
-                                encrypted_value = self.encrypt_data(value)
-                                
                                 # Store the preference directly in the memory store
-                                memory_content = f"User preference: {key} = {encrypted_value}"
+                                memory_content = f"User preference: {key} = {value}"
                                 memory_id = f"pref_{key}_{int(time.time())}"
                                 
                                 # Use put() method with a dictionary
@@ -377,7 +353,7 @@ class LangGraphManager:
                                     self.store.put((namespace, "preferences"), memory_id, memory_content)
                                 
                                 # Also directly use the manage_memory_tool to store the preference
-                                memory_message = HumanMessage(content=f"Store this user preference: {key}={encrypted_value}")
+                                memory_message = HumanMessage(content=f"Store this user preference: {key}={value}")
                                 self.messages.append(memory_message)
                                 self.messages.append(AIMessage(content=f"I've stored your preference that {key} is {value}."))
                                 
@@ -394,18 +370,15 @@ class LangGraphManager:
                 namespace = f"user:{user_id}"
                 conversation_id = f"conv_{int(time.time())}"
                 
-                # Encrypt the entire conversation
-                encrypted_conversation = self.encrypt_data(f"User asked: {message}\nAssistant replied: {response}")
-                
                 # Store both the user message and the assistant's response
-                conversation_content = {"memory": encrypted_conversation}
+                conversation_content = f"User asked: {message}\nAssistant replied: {response}"
                 
                 # CHANGE: Store in both thread-specific and global namespaces
                 # 1. Thread-specific memory (as before)
-                self.store.put((namespace, "conversations"), conversation_id, conversation_content)
+                self.store.put((namespace, "conversations"), conversation_id, {"memory": conversation_content})
                 
                 # 2. Global user memory (new)
-                self.store.put((namespace, "global_conversations"), conversation_id, conversation_content)
+                self.store.put((namespace, "global_conversations"), conversation_id, {"memory": conversation_content})
                 
                 logger.info(f"Stored conversation in memory for user {user_id}")
             except Exception as e:
